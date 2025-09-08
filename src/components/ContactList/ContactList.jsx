@@ -1,80 +1,71 @@
 import React, { useState, createContext, useContext, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useParams } from 'react-router-dom';
 
-
 const ContactContext = createContext();
-
-
 const API_BASE_URL = 'https://playground.4geeks.com/contact';
-const AGENDA_SLUG = 'mi-agenda-unica'; 
+const AGENDA_SLUG = 'mi-agenda-unica';
 
+// Helper functions
+const generateAvatar = (name) => 
+  `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=6c757d&color=fff&size=150`;
+
+const adaptContact = (contact) => ({
+  id: contact.id,
+  fullName: contact.name,
+  email: contact.email,
+  phone: contact.phone,
+  address: contact.address,
+  avatar: generateAvatar(contact.name)
+});
 
 const ContactProvider = ({ children }) => {
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  
-  const createAgenda = async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/agendas/${AGENDA_SLUG}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        }
-      });
-      
-     
-      if (!response.ok && response.status !== 400) {
-        throw new Error('Error al crear la agenda');
-      }
-      
-      return true;
-    } catch (error) {
-      console.error('Error creando agenda:', error);
-      return false;
-    }
-  };
-
-  
-  const fetchContacts = async () => {
+  const apiCall = async (url, options = {}) => {
     setLoading(true);
     setError(null);
     try {
-      
-      await createAgenda();
-      
-      const response = await fetch(`${API_BASE_URL}/agendas/${AGENDA_SLUG}/contacts`);
+      const response = await fetch(url, {
+        headers: { 'Content-Type': 'application/json' },
+        ...options
+      });
       
       if (!response.ok) {
-        throw new Error(`Error al cargar los contactos: ${response.status}`);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Error: ${response.status}`);
       }
       
-      const data = await response.json();
-      
-     
-      const adaptedContacts = (data.contacts || []).map(contact => ({
-        id: contact.id,
-        fullName: contact.name,
-        email: contact.email,
-        phone: contact.phone,
-        address: contact.address,
-        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(contact.name)}&background=6c757d&color=fff&size=150`
-      }));
-      
-      setContacts(adaptedContacts);
+      return await response.json();
     } catch (error) {
       setError(error.message);
-      console.error('Error fetching contacts:', error);
+      console.error('API Error:', error);
+      throw error;
     } finally {
       setLoading(false);
     }
   };
 
-  
+  const createAgenda = async () => {
+    try {
+      await fetch(`${API_BASE_URL}/agendas/${AGENDA_SLUG}`, { method: 'POST' });
+    } catch (error) {
+      console.error('Error creando agenda:', error);
+    }
+  };
+
+  const fetchContacts = async () => {
+    try {
+      await createAgenda();
+      const data = await apiCall(`${API_BASE_URL}/agendas/${AGENDA_SLUG}/contacts`);
+      setContacts((data.contacts || []).map(adaptContact));
+    } catch (error) {
+      // Error ya manejado en apiCall
+    }
+  };
+
   const addContact = async (newContact) => {
-    setLoading(true);
-    setError(null);
     try {
       const contactData = {
         name: newContact.fullName,
@@ -83,46 +74,24 @@ const ContactProvider = ({ children }) => {
         address: newContact.address || ''
       };
 
-      const response = await fetch(`${API_BASE_URL}/agendas/${AGENDA_SLUG}/contacts`, {
+      const created = await apiCall(`${API_BASE_URL}/agendas/${AGENDA_SLUG}/contacts`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify(contactData)
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Error al crear el contacto');
-      }
-
-      const createdContact = await response.json();
-      
-      
       const adaptedContact = {
-        id: createdContact.id,
-        fullName: createdContact.name,
-        email: createdContact.email,
-        phone: createdContact.phone,
-        address: createdContact.address,
-        avatar: newContact.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(createdContact.name)}&background=6c757d&color=fff&size=150`
+        ...adaptContact(created),
+        avatar: newContact.avatar || generateAvatar(created.name)
       };
       
       setContacts(prev => [...prev, adaptedContact]);
       return true;
     } catch (error) {
-      setError(error.message);
-      console.error('Error adding contact:', error);
       return false;
-    } finally {
-      setLoading(false);
     }
   };
 
-  
   const updateContact = async (updatedContact) => {
-    setLoading(true);
-    setError(null);
     try {
       const contactData = {
         name: updatedContact.fullName,
@@ -131,27 +100,14 @@ const ContactProvider = ({ children }) => {
         address: updatedContact.address || ''
       };
 
-      const response = await fetch(`${API_BASE_URL}/agendas/${AGENDA_SLUG}/contacts/${updatedContact.id}`, {
+      const updated = await apiCall(`${API_BASE_URL}/agendas/${AGENDA_SLUG}/contacts/${updatedContact.id}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify(contactData)
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Error al actualizar el contacto');
-      }
-
-      const updated = await response.json();
       const adaptedContact = {
-        id: updated.id,
-        fullName: updated.name,
-        email: updated.email,
-        phone: updated.phone,
-        address: updated.address,
-        avatar: updatedContact.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(updated.name)}&background=6c757d&color=fff&size=150`
+        ...adaptContact(updated),
+        avatar: updatedContact.avatar || generateAvatar(updated.name)
       };
 
       setContacts(prev => prev.map(contact =>
@@ -159,19 +115,12 @@ const ContactProvider = ({ children }) => {
       ));
       return true;
     } catch (error) {
-      setError(error.message);
-      console.error('Error updating contact:', error);
       return false;
-    } finally {
-      setLoading(false);
     }
   };
 
-  
   const deleteContact = async (id) => {
-    if (!window.confirm('¿Estás seguro de que quieres eliminar este contacto?')) {
-      return;
-    }
+    if (!window.confirm('¿Estás seguro de que quieres eliminar este contacto?')) return;
 
     setLoading(true);
     setError(null);
@@ -181,7 +130,7 @@ const ContactProvider = ({ children }) => {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.detail || 'Error al eliminar el contacto');
       }
 
@@ -194,52 +143,30 @@ const ContactProvider = ({ children }) => {
     }
   };
 
-  
   useEffect(() => {
     fetchContacts();
   }, []);
 
   return (
     <ContactContext.Provider value={{ 
-      contacts, 
-      addContact, 
-      updateContact, 
-      deleteContact, 
-      loading, 
-      error,
-      fetchContacts 
+      contacts, addContact, updateContact, deleteContact, loading, error, fetchContacts 
     }}>
       {children}
     </ContactContext.Provider>
   );
 };
 
-
 const ContactList = () => {
   const { contacts, deleteContact, loading, error, fetchContacts } = useContext(ContactContext);
   const navigate = useNavigate();
-
-  const generateAvatar = (name) => {
-    return `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=6c757d&color=fff&size=150`;
-  };
-
-  const handleRefresh = () => {
-    fetchContacts();
-  };
 
   return (
     <div className="container-fluid px-4 py-4">
       {error && (
         <div className="alert alert-danger" role="alert">
           <div className="d-flex justify-content-between align-items-center">
-            <div>
-              <strong>Error:</strong> {error}
-            </div>
-            <button 
-              className="btn btn-sm btn-outline-danger" 
-              onClick={handleRefresh}
-              disabled={loading}
-            >
+            <div><strong>Error:</strong> {error}</div>
+            <button className="btn btn-sm btn-outline-danger" onClick={fetchContacts} disabled={loading}>
               Reintentar
             </button>
           </div>
@@ -249,18 +176,10 @@ const ContactList = () => {
       <div className="d-flex justify-content-between align-items-center mb-4">
         <h2 className="contact-list-title mb-0">Contactos</h2>
         <div>
-          <button
-            className="btn btn-outline-secondary me-2"
-            onClick={handleRefresh}
-            disabled={loading}
-          >
+          <button className="btn btn-outline-secondary me-2" onClick={fetchContacts} disabled={loading}>
             <i className="fas fa-sync-alt"></i> Actualizar
           </button>
-          <button
-            className="btn btn-success"
-            onClick={() => navigate('/form')}
-            disabled={loading}
-          >
+          <button className="btn btn-success" onClick={() => navigate('/form')} disabled={loading}>
             Añadir nuevo contacto
           </button>
         </div>
@@ -291,9 +210,7 @@ const ContactList = () => {
                     alt={contact.fullName}
                     className="rounded-circle"
                     style={{ width: '80px', height: '80px', objectFit: 'cover' }}
-                    onError={(e) => {
-                      e.target.src = generateAvatar(contact.fullName);
-                    }}
+                    onError={(e) => { e.target.src = generateAvatar(contact.fullName); }}
                   />
                 </div>
                 <div className="flex-grow-1">
@@ -338,7 +255,6 @@ const ContactList = () => {
   );
 };
 
-
 const ContactForm = () => {
   const { contacts, addContact, updateContact, loading, error } = useContext(ContactContext);
   const navigate = useNavigate();
@@ -346,13 +262,8 @@ const ContactForm = () => {
   const isEditing = contactId !== undefined;
 
   const [formData, setFormData] = useState({
-    fullName: '',
-    email: '',
-    phone: '',
-    address: '',
-    avatar: ''
+    fullName: '', email: '', phone: '', address: '', avatar: ''
   });
-
   const [errors, setErrors] = useState({});
 
   useEffect(() => {
@@ -369,8 +280,6 @@ const ContactForm = () => {
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
-    
-   
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
@@ -380,24 +289,18 @@ const ContactForm = () => {
     const newErrors = {};
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     
-    if (!formData.fullName.trim()) {
-      newErrors.fullName = 'Por favor, ingresa un nombre completo.';
-    }
-    
+    if (!formData.fullName.trim()) newErrors.fullName = 'Por favor, ingresa un nombre completo.';
     if (!formData.email.trim()) {
       newErrors.email = 'Por favor, ingresa un correo electrónico.';
     } else if (!emailRegex.test(formData.email)) {
       newErrors.email = 'Por favor, ingresa un correo electrónico válido.';
     }
 
-    
     const duplicateEmail = contacts.find(contact =>
       contact.email.toLowerCase() === formData.email.toLowerCase() &&
       contact.id !== (isEditing ? parseInt(contactId) : null)
     );
-    if (duplicateEmail) {
-      newErrors.email = 'Ya existe un contacto con este correo.';
-    }
+    if (duplicateEmail) newErrors.email = 'Ya existe un contacto con este correo.';
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -405,29 +308,38 @@ const ContactForm = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    if (!validate()) {
-      return;
-    }
+    if (!validate()) return;
 
     const contactData = {
       ...formData,
-      avatar: formData.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(formData.fullName)}&background=6c757d&color=fff&size=150`
+      avatar: formData.avatar || generateAvatar(formData.fullName)
     };
 
-    let success = false;
+    const success = isEditing 
+      ? await updateContact({ ...contactData, id: parseInt(contactId) })
+      : await addContact(contactData);
     
-    if (isEditing) {
-      success = await updateContact({ ...contactData, id: parseInt(contactId) });
-    } else {
-      success = await addContact(contactData);
-    }
-    
-    
-    if (success) {
-      navigate('/');
-    }
+    if (success) navigate('/');
   };
+
+  const renderInput = (name, label, type = 'text', required = false, placeholder = '') => (
+    <div className="mb-3">
+      <label htmlFor={name} className="form-label">
+        {label} {required && '*'}
+      </label>
+      <input
+        type={type}
+        className={`form-control ${errors[name] ? 'is-invalid' : ''}`}
+        id={name}
+        name={name}
+        placeholder={placeholder || `Introduce ${label.toLowerCase()}`}
+        value={formData[name]}
+        onChange={handleInputChange}
+        disabled={loading}
+      />
+      {errors[name] && <div className="invalid-feedback">{errors[name]}</div>}
+    </div>
+  );
 
   return (
     <div className="container p-4">
@@ -447,64 +359,10 @@ const ContactForm = () => {
             </div>
             <form onSubmit={handleSubmit}>
               <div className="card-body">
-                <div className="mb-3">
-                  <label htmlFor="fullName" className="form-label">Nombre Completo *</label>
-                  <input
-                    type="text"
-                    className={`form-control ${errors.fullName ? 'is-invalid' : ''}`}
-                    id="fullName"
-                    name="fullName"
-                    placeholder="Introduce el nombre completo"
-                    value={formData.fullName}
-                    onChange={handleInputChange}
-                    disabled={loading}
-                  />
-                  {errors.fullName && <div className="invalid-feedback">{errors.fullName}</div>}
-                </div>
-                
-                <div className="mb-3">
-                  <label htmlFor="email" className="form-label">Email *</label>
-                  <input
-                    type="email"
-                    className={`form-control ${errors.email ? 'is-invalid' : ''}`}
-                    id="email"
-                    name="email"
-                    placeholder="Introduce el email"
-                    value={formData.email}
-                    onChange={handleInputChange}
-                    disabled={loading}
-                  />
-                  {errors.email && <div className="invalid-feedback">{errors.email}</div>}
-                </div>
-                
-                <div className="mb-3">
-                  <label htmlFor="phone" className="form-label">Teléfono</label>
-                  <input
-                    type="tel"
-                    className="form-control"
-                    id="phone"
-                    name="phone"
-                    placeholder="Introduce el teléfono"
-                    value={formData.phone}
-                    onChange={handleInputChange}
-                    disabled={loading}
-                  />
-                </div>
-                
-                <div className="mb-3">
-                  <label htmlFor="address" className="form-label">Dirección</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    id="address"
-                    name="address"
-                    placeholder="Introduce la dirección"
-                    value={formData.address}
-                    onChange={handleInputChange}
-                    disabled={loading}
-                  />
-                </div>
-                
+                {renderInput('fullName', 'Nombre Completo', 'text', true)}
+                {renderInput('email', 'Email', 'email', true)}
+                {renderInput('phone', 'Teléfono', 'tel')}
+                {renderInput('address', 'Dirección')}
                 <div className="mb-3">
                   <label htmlFor="avatar" className="form-label">URL de la foto (Opcional)</label>
                   <input
@@ -524,19 +382,10 @@ const ContactForm = () => {
               </div>
               
               <div className="card-footer bg-white d-flex justify-content-between">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => navigate('/')}
-                  disabled={loading}
-                >
+                <button type="button" className="btn btn-secondary" onClick={() => navigate('/')} disabled={loading}>
                   Cancelar
                 </button>
-                <button
-                  type="submit"
-                  className="btn btn-success"
-                  disabled={loading}
-                >
+                <button type="submit" className="btn btn-success" disabled={loading}>
                   {loading ? (
                     <>
                       <span className="spinner-border spinner-border-sm me-2" role="status"></span>
@@ -555,21 +404,18 @@ const ContactForm = () => {
   );
 };
 
-
-const App = () => {
-  return (
-    <BrowserRouter>
-      <ContactProvider>
-        <div className="min-vh-100" style={{ backgroundColor: '#f8f9fa' }}>
-          <Routes>
-            <Route path="/" element={<ContactList />} />
-            <Route path="/form" element={<ContactForm />} />
-            <Route path="/form/:contactId" element={<ContactForm />} />
-          </Routes>
-        </div>
-      </ContactProvider>
-    </BrowserRouter>
-  );
-};
+const App = () => (
+  <BrowserRouter>
+    <ContactProvider>
+      <div className="min-vh-100" style={{ backgroundColor: '#f8f9fa' }}>
+        <Routes>
+          <Route path="/" element={<ContactList />} />
+          <Route path="/form" element={<ContactForm />} />
+          <Route path="/form/:contactId" element={<ContactForm />} />
+        </Routes>
+      </div>
+    </ContactProvider>
+  </BrowserRouter>
+);
 
 export default App;
